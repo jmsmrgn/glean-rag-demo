@@ -15,7 +15,7 @@ import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { tavily } from "@tavily/core";
-import { ingestDocuments } from "../scripts/ingest.js";
+import { ingestDocuments } from "./scripts/ingest.js";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -25,16 +25,30 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Supabase client for vector search
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
+// Validate required environment variables
+const requiredEnvVars = ["SUPABASE_URL", "SUPABASE_KEY", "OPENAI_API_KEY"];
+const missingEnvVars = requiredEnvVars.filter(
+  (varName) => !process.env[varName]
 );
 
+if (missingEnvVars.length > 0) {
+  console.error(
+    "❌ Missing required environment variables:",
+    missingEnvVars.join(", ")
+  );
+  console.error("Please set these in your Vercel dashboard or .env file");
+}
+
+// Supabase client for vector search
+const supabase =
+  process.env.SUPABASE_URL && process.env.SUPABASE_KEY
+    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    : null;
+
 // OpenAI client for embeddings and completions
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 // Tavily client for web search (optional)
 const tavilyClient = process.env.TAVILY_API_KEY
@@ -47,7 +61,12 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors()); // Cross-origin requests
 app.use(express.json()); // Parse JSON bodies
-app.use(express.static(path.join(__dirname, "../client"))); // Serve frontend
+
+// Serve frontend only in local development (not on Vercel)
+// On Vercel, static files are automatically served from /public directory
+if (!process.env.VERCEL) {
+  app.use(express.static(path.join(__dirname, "client")));
+}
 
 // ============================================================================
 // API Endpoint: POST /api/ingest
@@ -85,6 +104,19 @@ app.post("/api/ingest", async (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   try {
+    // Check if required clients are initialized
+    if (!openai || !supabase) {
+      return res.status(500).json({
+        error: "Service configuration error",
+        details:
+          "Required API clients are not properly configured. Please check environment variables.",
+        missingClients: {
+          openai: !openai,
+          supabase: !supabase,
+        },
+      });
+    }
+
     const { message } = req.body;
 
     if (!message || typeof message !== "string") {
@@ -189,6 +221,14 @@ ${context}`,
 
 app.post("/api/chat-basic", async (req, res) => {
   try {
+    if (!openai) {
+      return res.status(500).json({
+        error: "Service configuration error",
+        details:
+          "OpenAI client not configured. Please check OPENAI_API_KEY environment variable.",
+      });
+    }
+
     const { message } = req.body;
 
     if (!message) {
@@ -236,6 +276,14 @@ Be honest if you don't have specific information. Do not make up details.`,
 
 app.post("/api/chat-websearch", async (req, res) => {
   try {
+    if (!openai) {
+      return res.status(500).json({
+        error: "Service configuration error",
+        details:
+          "OpenAI client not configured. Please check OPENAI_API_KEY environment variable.",
+      });
+    }
+
     const { message } = req.body;
 
     if (!message) {
@@ -327,24 +375,32 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "healthy",
     timestamp: new Date().toISOString(),
+    environment: {
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasSupabaseKey: !!process.env.SUPABASE_KEY,
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+      hasTavilyKey: !!process.env.TAVILY_API_KEY,
+      isVercel: !!process.env.VERCEL,
+      nodeVersion: process.version,
+    },
   });
 });
 
-// Catch-all route - serves index.html for any unmatched routes
-// Enables client-side routing if needed later
+// Start server for local development
+if (!process.env.VERCEL && process.argv[1] === fileURLToPath(import.meta.url)) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log("\nGlean RAG Assistant Server");
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log("\nAPI Endpoints:");
+    console.log("  POST /api/ingest        - Ingest documents");
+    console.log("  POST /api/chat          - Chat with RAG (internal docs)");
+    console.log("  POST /api/chat-websearch - Chat with web search");
+    console.log("  POST /api/chat-basic    - Chat basic (training data only)");
+    console.log("  GET  /api/health        - Health check");
+    console.log(`\nFrontend: http://localhost:${PORT}\n`);
+  });
+}
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../client/index.html"));
-});
-
-app.listen(PORT, () => {
-  console.log("\nGlean RAG Assistant Server");
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log("\nAPI Endpoints:");
-  console.log("  POST /api/ingest        - Ingest documents");
-  console.log("  POST /api/chat          - Chat with RAG (internal docs)");
-  console.log("  POST /api/chat-websearch - Chat with web search");
-  console.log("  POST /api/chat-basic    - Chat basic (training data only)");
-  console.log("  GET  /api/health        - Health check");
-  console.log(`\nFrontend: http://localhost:${PORT}\n`);
-});
+// Export the Express app (Vercel pattern)
+export default app;

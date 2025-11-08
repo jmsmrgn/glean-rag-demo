@@ -2,14 +2,18 @@
   "name": "glean-rag-assistant",
   "version": "1.0.0",
   "description": "A lightweight RAG assistant prototype for Glean documentation using Supabase vector storage",
-  "main": "server/index.js",
+  "main": "index.js",
   "type": "module",
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
-    "start": "node server/index.js",
-    "ingest": "node scripts/run-ingest.js"
+    "build": "mkdir -p public && cp -r client/* public/",
+    "start": "node index.js",
+    "dev": "node index.js",
+    "ingest": "node scripts/run-ingest.js",
+    "sync": "./sync-public.sh",
+    "deploy": "./deploy.sh"
   },
   "author": "",
   "license": "MIT",
@@ -23,5 +27,5 @@
     "langchain": "^0.1.0",
     "openai": "^4.28.0"
   },
-  "packageManager": "pnpm@10.20.0+sha512.cf9998222162dd85864d0a8102e7892e7ba4ceadebbf5a31f9c2fce48dfce317a9c53b9f6464d1ef9042cba2e02ae02a9f7c143a2b438cd93c91840f0192b9dd"
+  "packageManager": "yarn@1.22.21+sha1.1959a18351b811cdeedbd484a8f86c3cc3bbaf72"
 }
