@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 *.log
 LIVE_REVIEW_SCRIPT.md
+
+# Vercel
+.vercel
+.vercel/*
